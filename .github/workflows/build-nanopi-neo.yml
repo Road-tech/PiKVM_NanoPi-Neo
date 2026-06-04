@@ -11,22 +11,28 @@ env:
   BOARD: nanopineo
   BRANCH: current
   RELEASE: bookworm
-  BUILD_MINIMAL: "no"
-  KERNEL_CONFIGURE: "no"
+  BUILD_MINIMAL: no
+  KERNEL_CONFIGURE: no
   KERNEL_GIT: shallow
 
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 480
-    
     steps:
-    - name: Checkout armbian/build
+    - name: Checkout code
       uses: actions/checkout@v4
       with:
         repository: armbian/build
         fetch-depth: 0
         path: build
+
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
+      with:
+        platforms: arm,arm64,riscv64
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
 
     - name: Checkout our patches
       uses: actions/checkout@v4
