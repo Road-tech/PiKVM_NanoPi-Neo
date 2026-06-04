@@ -1,0 +1,119 @@
+name: Build NanoPi Neo Image
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  BOARD: nanopineo
+  BRANCH: current
+  RELEASE: bookworm
+  BUILD_MINIMAL: "no"
+  KERNEL_CONFIGURE: "no"
+  KERNEL_GIT: shallow
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 480
+    
+    steps:
+    - name: Checkout armbian/build
+      uses: actions/checkout@v4
+      with:
+        repository: armbian/build
+        fetch-depth: 0
+        path: build
+
+    - name: Checkout our patches
+      uses: actions/checkout@v4
+      with:
+        path: nanopineo-patches
+        fetch-depth: 0
+
+    - name: Copy custom patches and config
+      run: |
+        cp -r nanopineo-patches/patch/kernel/archive/sunxi-6.18/patches.armbian/* build/patch/kernel/archive/sunxi-6.18/patches.armbian/
+        cp nanopineo-patches/config/boards/nanopineo.csc build/config/boards/nanopineo.csc
+        
+        if ! grep -q "arm-dts-h3-nanopi-neo-set-usb-otg-peripheral" build/patch/kernel/archive/sunxi-6.18/series.conf; then
+          sed -i '/arm-dts-h3-nanopi-neo-Add-regulator-leds-mmc2.patch/a \	patches.armbian/arm-dts-h3-nanopi-neo-set-usb-otg-peripheral.patch' build/patch/kernel/archive/sunxi-6.18/series.conf
+        fi
+
+    - name: Build Armbian image
+      run: |
+        cd build
+        ./compile.sh build BOARD=${{ env.BOARD }} BRANCH=${{ env.BRANCH }} RELEASE=${{ env.RELEASE }} BUILD_MINIMAL=${{ env.BUILD_MINIMAL }} KERNEL_CONFIGURE=${{ env.KERNEL_CONFIGURE }} KERNEL_GIT=${{ env.KERNEL_GIT }}
+
+    - name: List output files
+      run: |
+        ls -la build/output/images/
+
+    - name: Compress image with xz
+      run: |
+        cd build/output/images
+        IMG_FILE=$(ls *.img | head -1)
+        echo "IMG_FILE=$IMG_FILE" >> $GITHUB_ENV
+        xz -9 -T0 "$IMG_FILE"
+        ls -la
+
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: "build-${{ github.run_id }}"
+        release_name: "NanoPi Neo Build ${{ github.run_id }}"
+        body: |
+          Automated build for NanoPi Neo
+          
+          **Build Information:**
+          - Board: ${{ env.BOARD }}
+          - Branch: ${{ env.BRANCH }}
+          - Release: ${{ env.RELEASE }}
+          - Commit: ${{ github.sha }}
+          
+          **Features:**
+          - USB OTG support (dr_mode=peripheral)
+          - libcomposite kernel module enabled
+          
+          **Files:**
+          - Armbian image (.img.xz)
+          - SHA256 checksum (.sha)
+          - Build info (.txt)
+        draft: false
+        prerelease: false
+
+    - name: Upload Image Archive
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: build/output/images/${{ env.IMG_FILE }}.xz
+        asset_name: ${{ env.IMG_FILE }}.xz
+        asset_content_type: application/x-xz
+
+    - name: Upload SHA256 Checksum
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: build/output/images/${{ env.IMG_FILE }}.sha
+        asset_name: ${{ env.IMG_FILE }}.sha
+        asset_content_type: text/plain
+
+    - name: Upload Build Info
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: build/output/images/${{ env.IMG_FILE }}.txt
+        asset_name: ${{ env.IMG_FILE }}.txt
+        asset_content_type: text/plain
