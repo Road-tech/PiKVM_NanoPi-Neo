@@ -63,7 +63,7 @@ jobs:
         cd build/output/images
         IMG_FILE=$(ls *.img | head -1)
         echo "IMG_FILE=$IMG_FILE" >> $GITHUB_ENV
-        xz -9 -T0 "$IMG_FILE"
+        xz -9 -T0 --no-preserve "$IMG_FILE"
         ls -la
 
     - name: Create Release
