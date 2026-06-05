@@ -11,22 +11,28 @@ env:
   BOARD: nanopineo
   BRANCH: current
   RELEASE: bookworm
-  BUILD_MINIMAL: "no"
-  KERNEL_CONFIGURE: "no"
+  BUILD_MINIMAL: no
+  KERNEL_CONFIGURE: no
   KERNEL_GIT: shallow
 
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 480
-    
     steps:
-    - name: Checkout armbian/build
+    - name: Checkout code
       uses: actions/checkout@v4
       with:
         repository: armbian/build
         fetch-depth: 0
         path: build
+
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
+      with:
+        platforms: arm,arm64,riscv64
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
 
     - name: Checkout our patches
       uses: actions/checkout@v4
@@ -52,12 +58,12 @@ jobs:
       run: |
         ls -la build/output/images/
 
-    - name: Compress image with xz
+    - name: Compress image with tar
       run: |
         cd build/output/images
         IMG_FILE=$(ls *.img | head -1)
         echo "IMG_FILE=$IMG_FILE" >> $GITHUB_ENV
-        xz -9 -T0 "$IMG_FILE"
+        tar -czf "$IMG_FILE.tar.gz" "$IMG_FILE"
         ls -la
 
     - name: Create Release
@@ -94,9 +100,9 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: build/output/images/${{ env.IMG_FILE }}.xz
-        asset_name: ${{ env.IMG_FILE }}.xz
-        asset_content_type: application/x-xz
+        asset_path: build/output/images/${{ env.IMG_FILE }}.tar.gz
+        asset_name: ${{ env.IMG_FILE }}.tar.gz
+        asset_content_type: application/gzip
 
     - name: Upload SHA256 Checksum
       uses: actions/upload-release-asset@v1
